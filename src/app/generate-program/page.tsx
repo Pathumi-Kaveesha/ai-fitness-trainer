@@ -19,7 +19,7 @@ const GenerateProgramPage = () => {
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
-  //auto-scroll messages
+  // auto-scroll messages
   useEffect(() => {
     if (messageContainerRef.current) {
       messageContainerRef.current.scrollTop =
@@ -27,7 +27,7 @@ const GenerateProgramPage = () => {
     }
   }, [messages]);
 
-  //navigate user to profile page after the call ends
+  // navigate user to profile page after the call ends
   useEffect(() => {
     if (callEnded) {
       const redirectTimer = setTimeout(() => {
@@ -49,26 +49,48 @@ const GenerateProgramPage = () => {
 
     const handleCallEnd = () => {
       console.log("Call ended");
-      setConnecting(false);
       setCallActive(false);
+      setConnecting(false);
       setIsSpeaking(false);
       setCallEnded(true);
     };
 
     const handleSpeechStart = () => {
-      console.log("AI started speaking");
+      console.log("AI started Speaking");
       setIsSpeaking(true);
     };
 
     const handleSpeechEnd = () => {
-      console.log("AI stopped speaking");
+      console.log("AI stopped Speaking");
       setIsSpeaking(false);
     };
-
-    const handleMessage = (message: any) => {};
+    const handleMessage = (message: any) => {
+      console.log("Vapi Message Received:", message);
+      if (message.type === "transcript" && message.transcriptType === "final") {
+        const newMessage = { content: message.transcript, role: message.role };
+        setMessages((prev) => [...prev, newMessage]);
+      }
+    };
 
     const handleError = (error: any) => {
-      console.log("Vapi Error", error);
+      // Check the deep object structure or message string for the specific error
+      const errorMessage =
+        error?.errorMsg ||
+        error?.message ||
+        error?.error?.msg ||
+        (typeof error === "string" ? error : "");
+
+      const isGracefulExit =
+        errorMessage.includes("Meeting has ended") ||
+        errorMessage.includes("ejected");
+
+      if (isGracefulExit) {
+        console.log("Vapi: Session closed normally.");
+        return; // EXIT HERE: This prevents console.error from being called
+      }
+
+      // Only real, unexpected errors reach this line
+      console.error("Vapi Error", error);
       setConnecting(false);
       setCallActive(false);
     };
@@ -81,7 +103,7 @@ const GenerateProgramPage = () => {
       .on("message", handleMessage)
       .on("error", handleError);
 
-    //cleanup event listeners on unmount
+    // cleanup event listeners on unmount
     return () => {
       vapi
         .off("call-start", handleCallStart)
@@ -94,29 +116,36 @@ const GenerateProgramPage = () => {
   }, []);
 
   const toggleCall = async () => {
-    if (callActive) {
-      vapi.stop();
-    } else {
+    if (callActive) vapi.stop();
+    else {
       try {
         setConnecting(true);
         setMessages([]);
         setCallEnded(false);
+
         const fullName = user?.firstName
           ? `${user.firstName} ${user.lastName || ""}`.trim()
-          : "There";
+          : "Guest";
 
-        await vapi.start(process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID!, {
-          variableValues: {
-            full_name: fullName,
+        console.log(fullName);
+
+        await (vapi as any).start(
+          undefined, // assistantId
+          {
+            variableValues: {
+              full_name: fullName,
+              user_id: user?.id || "anonymous",
+            },
           },
-        });
+          undefined,
+          process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID,
+        );
       } catch (error) {
-        console.log("Failed to start call", error);
+        console.error("Vapi Start Error:", error);
         setConnecting(false);
       }
     }
   };
-
   return (
     <div className="flex flex-col min-h-screen text-foreground overflow-hidden  pb-6 pt-24">
       <div className="container mx-auto px-4 h-full max-w-5xl">
@@ -307,5 +336,4 @@ const GenerateProgramPage = () => {
     </div>
   );
 };
-
 export default GenerateProgramPage;
